@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import humanizeDuration from "humanize-duration";
 import { NextPage } from "next";
+import toast from "react-hot-toast";
 import { createTestClient, encodePacked, formatEther, http, keccak256, parseEther, toBytes, verifyMessage } from "viem";
 import { hardhat } from "viem/chains";
 import { Address as AddressType, useAccount, useWalletClient } from "wagmi";
@@ -127,6 +128,24 @@ const Streamer: NextPage = () => {
        *  and then use verifyMessage() to confirm that voucher signer was
        *  `clientAddress`. (If it wasn't, log some error message and return).
        */
+
+      const packed = encodePacked(["uint256"], [updatedBalance]);
+      const hashed = keccak256(packed);
+      const arrayified = toBytes(hashed);
+      const valid = await verifyMessage({
+        message: { raw: arrayified },
+        address: clientAddress,
+        signature: data.signature,
+      });
+
+      if (!valid) {
+        console.log("not valid");
+        toast.error("Invalid voucher signature");
+        return;
+      } else {
+        console.log("valid");
+      }
+
       const existingVoucher = vouchers[clientAddress];
 
       // update our stored voucher if this new one is more valuable
@@ -199,7 +218,23 @@ const Streamer: NextPage = () => {
   }, [userAddress]);
 
   const provideService = (client: AddressType, wisdom: string) => {
+    const prevWisdom = wisdoms[client];
+    const initialBalance = parseEther(STREAM_ETH_VALUE);
+    const costPerCharacter = parseEther(ETH_PER_CHARACTER);
+    const duePayment = costPerCharacter * BigInt(wisdom?.length || 0);
+    let updatedBalance = initialBalance - duePayment;
+    if (updatedBalance < 0n) {
+      updatedBalance = 0n;
+    }
+
+    const prevUpdatedBalance = vouchers[client]?.updatedBalance;
     setWisdoms({ ...wisdoms, [client]: wisdom });
+    if (prevWisdom) {
+      if (prevUpdatedBalance - updatedBalance > parseEther(ETH_PER_CHARACTER)) {
+        toast.error("You must pay");
+        return;
+      }
+    }
     channels[client]?.postMessage(wisdom);
   };
 
@@ -346,13 +381,13 @@ const Streamer: NextPage = () => {
                     </div>
 
                     {/* Checkpoint 4: */}
-                    {/* <CashOutVoucherButton
+                    <CashOutVoucherButton
                       key={clientAddress}
                       clientAddress={clientAddress}
                       challenged={challenged}
                       closed={closed}
                       voucher={vouchers[clientAddress]}
-                    /> */}
+                    />
                   </div>
                 ))}
               </div>
