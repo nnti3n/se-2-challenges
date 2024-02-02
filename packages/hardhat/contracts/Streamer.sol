@@ -35,7 +35,7 @@ contract Streamer is Ownable {
 		return canCloseAt[channel] - block.timestamp;
 	}
 
-	function withdrawEarnings(Voucher calldata voucher) public {
+	function withdrawEarnings(Voucher calldata voucher) public onlyOwner {
 		// like the off-chain code, signatures are applied to the hash of the data
 		// instead of the raw data itself
 		bytes32 hashed = keccak256(abi.encode(voucher.updatedBalance));
@@ -97,6 +97,12 @@ contract Streamer is Ownable {
     - emits a Challenged event
   */
 
+	function challengeChannel() public {
+		require(balances[msg.sender] > 0, "No open channel");
+		canCloseAt[msg.sender] = block.timestamp + 5;
+		emit Challenged(msg.sender);
+	}
+
 	/*
     Checkpoint 5b: Close the channel
 
@@ -106,6 +112,19 @@ contract Streamer is Ownable {
     - sends the channel's remaining funds to msg.sender, and sets the balance to 0
     - emits the Closed event
   */
+
+	function defundChannel() public {
+		require(canCloseAt[msg.sender] != 0, "No closing channel");
+		require(
+			canCloseAt[msg.sender] < block.timestamp,
+			"Not closing time yet"
+		);
+		(bool sent, ) = msg.sender.call{ value: balances[msg.sender] }("");
+		require(sent, "Failed to withdraw");
+		balances[msg.sender] = 0;
+		canCloseAt[msg.sender] = 0;
+		emit Closed(msg.sender);
+	}
 
 	struct Voucher {
 		uint256 updatedBalance;
